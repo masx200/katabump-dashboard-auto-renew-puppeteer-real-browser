@@ -108,7 +108,60 @@ class RenewalExecutor {
                 return;
             }
             logger_1.logger.info('RenewalExecutor', '续期模态框已打开');
-            const hasCaptcha = await this.page.evaluate(() => {
+            var hasCaptcha = await this.page.evaluate(() => {
+                const captchaInput = document.querySelector('input[name="cf-turnstile-response"]');
+                return !!captchaInput;
+            });
+            if (hasCaptcha) {
+                logger_1.logger.info('RenewalExecutor', '检测到 Cloudflare Turnstile 验证码');
+                logger_1.logger.info('RenewalExecutor', '尝试触发 Cloudflare 自动验证...');
+                await delay(20000);
+                const captchaClicked = await this.clickCaptchaArea();
+                if (captchaClicked) {
+                    logger_1.logger.info('RenewalExecutor', '✅ 已点击验证码区域,等待验证完成...');
+                }
+                else {
+                    logger_1.logger.warn('RenewalExecutor', '⚠️ 未能点击验证码区域,等待自动验证...');
+                }
+                logger_1.logger.info('RenewalExecutor', '等待 60 秒供验证码完成...');
+                let captchaCompleted = false;
+                for (let i = 0; i < 60; i++) {
+                    await delay(1000);
+                    captchaCompleted = await this.page.evaluate(() => {
+                        const successToken = document.querySelector('input[name="cf-turnstile-response"]');
+                        if (!successToken)
+                            return false;
+                        const value = successToken.value;
+                        return Boolean(value && value.length > 500);
+                    });
+                    if (captchaCompleted) {
+                        logger_1.logger.info('RenewalExecutor', `✅ 验证码已完成 (耗时: ${i}s)`);
+                        break;
+                    }
+                    await delay(10000);
+                    const captchaClicked = await this.clickCaptchaArea();
+                    if (captchaClicked) {
+                        logger_1.logger.info('RenewalExecutor', '✅ 已点击验证码区域,等待验证完成...');
+                    }
+                    else {
+                        logger_1.logger.warn('RenewalExecutor', '⚠️ 未能点击验证码区域,等待自动验证...');
+                    }
+                    if (i > 0 && i % 10 === 0) {
+                        logger_1.logger.info('RenewalExecutor', `仍在等待验证码完成... (${i}s/60s)`);
+                    }
+                }
+                if (!captchaCompleted) {
+                    logger_1.logger.warn('RenewalExecutor', '⚠️ 验证码超时未完成,尝试继续...');
+                }
+                logger_1.logger.info('RenewalExecutor', '验证码已完成,等待 10 秒让 Cloudflare 处理...');
+                await delay(10000);
+                logger_1.logger.info('RenewalExecutor', '✅ Cloudflare 处理完成');
+            }
+            else {
+                logger_1.logger.info('RenewalExecutor', '未检测到验证码,等待 60 秒...');
+                await delay(60000);
+            }
+            var hasCaptcha = await this.page.evaluate(() => {
                 const captchaInput = document.querySelector('input[name="cf-turnstile-response"]');
                 return !!captchaInput;
             });

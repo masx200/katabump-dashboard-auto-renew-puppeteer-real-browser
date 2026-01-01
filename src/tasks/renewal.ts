@@ -164,7 +164,7 @@ export class RenewalExecutor {
       // 检查是否有 Cloudflare Turnstile 验证码
       // iframe 被隐藏在 shadow-root(closed) 中,无法直接访问
       // 但可以通过查找隐藏的 input[name="cf-turnstile-response"] 来判断
-      const hasCaptcha = await this.page.evaluate(() => {
+      var hasCaptcha = await this.page.evaluate(() => {
         const captchaInput = document.querySelector('input[name="cf-turnstile-response"]');
         return !!captchaInput;
       });
@@ -237,7 +237,79 @@ export class RenewalExecutor {
         logger.info('RenewalExecutor', '未检测到验证码,等待 60 秒...');
         await delay(60000);
       }
+    var hasCaptcha = await this.page.evaluate(() => {
+        const captchaInput = document.querySelector('input[name="cf-turnstile-response"]');
+        return !!captchaInput;
+      });
 
+      if (hasCaptcha) {
+        logger.info('RenewalExecutor', '检测到 Cloudflare Turnstile 验证码');
+        logger.info('RenewalExecutor', '尝试触发 Cloudflare 自动验证...');
+
+        // 等待 20 秒让页面完全加载
+        await delay(20000);
+
+        // 尝试点击验证码区域来触发验证
+        // 根据 HTML 结构,Captcha label 在左侧,验证码 iframe 在右侧约 200px 位置
+        const captchaClicked = await this.clickCaptchaArea();
+
+        if (captchaClicked) {
+          logger.info('RenewalExecutor', '✅ 已点击验证码区域,等待验证完成...');
+        } else {
+          logger.warn('RenewalExecutor', '⚠️ 未能点击验证码区域,等待自动验证...');
+        }
+
+        // 等待验证码自动完成
+        logger.info('RenewalExecutor', '等待 60 秒供验证码完成...');
+
+        let captchaCompleted = false;
+        for (let i = 0; i < 60; i++) {
+          await delay(1000);
+
+          captchaCompleted = await this.page.evaluate(() => {
+            // 检查 Turnstile 的成功标记
+            const successToken = document.querySelector('input[name="cf-turnstile-response"]');
+            if (!successToken) return false;
+
+            const value = (successToken as HTMLInputElement).value;
+
+            // 成功的 token 通常非常长(>500字符)
+            // 失败的 token 通常以 "0." 开头,长度较短
+            // 检查 token 是否存在且长度大于 500
+            return Boolean(value && value.length > 500);
+          });
+
+          if (captchaCompleted) {
+            logger.info('RenewalExecutor', `✅ 验证码已完成 (耗时: ${i}s)`);
+            break;
+          }
+          await delay(10000)
+          const captchaClicked = await this.clickCaptchaArea();
+
+          if (captchaClicked) {
+            logger.info('RenewalExecutor', '✅ 已点击验证码区域,等待验证完成...');
+          } else {
+            logger.warn('RenewalExecutor', '⚠️ 未能点击验证码区域,等待自动验证...');
+          }
+          // 每 10 秒输出一次等待信息
+          if (i > 0 && i % 10 === 0) {
+            logger.info('RenewalExecutor', `仍在等待验证码完成... (${i}s/60s)`);
+          }
+        }
+
+        if (!captchaCompleted) {
+          logger.warn('RenewalExecutor', '⚠️ 验证码超时未完成,尝试继续...');
+        }
+
+        // 验证码完成后,额外等待 10 秒让 Cloudflare 处理
+        logger.info('RenewalExecutor', '验证码已完成,等待 10 秒让 Cloudflare 处理...');
+        await delay(10000);
+        logger.info('RenewalExecutor', '✅ Cloudflare 处理完成');
+      } else {
+        // 没有验证码,等待一下让页面稳定
+        logger.info('RenewalExecutor', '未检测到验证码,等待 60 秒...');
+        await delay(60000);
+      }
       // 查找并点击模态框中的 Renew 确认按钮
       logger.info('RenewalExecutor', '查找模态框中的 Renew 按钮...');
 

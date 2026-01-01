@@ -5,11 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BrowserController = void 0;
 exports.smoothMouseMove = smoothMouseMove;
-const puppeteer_extra_1 = __importDefault(require("puppeteer-extra"));
-const puppeteer_extra_plugin_stealth_1 = __importDefault(require("puppeteer-extra-plugin-stealth"));
+const puppeteer_1 = __importDefault(require("puppeteer"));
 const logger_1 = require("../utils/logger");
 const types_1 = require("../types");
-puppeteer_extra_1.default.use((0, puppeteer_extra_plugin_stealth_1.default)());
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const random = (min, max) => Math.random() * (max - min) + min;
 async function smoothMouseMove(page, startX, startY, endX, endY, steps) {
@@ -113,7 +111,7 @@ class BrowserController {
                 launchOptions.userDataDir = this.config.userDataDir;
                 logger_1.logger.info('BrowserController', `使用用户数据目录: ${this.config.userDataDir}`);
             }
-            this.browser = await puppeteer_extra_1.default.launch(launchOptions);
+            this.browser = await puppeteer_1.default.launch(launchOptions);
             const dohUrl = this.config.dohUrl || this.DEFAULT_DOH_URL;
             logger_1.logger.info('BrowserController', `浏览器启动成功 (DoH: ${dohUrl})`);
         }
@@ -484,7 +482,6 @@ class BrowserController {
             logger_1.logger.info('BrowserController', '正在诊断浏览器环境...');
             const diagnostics = await page.evaluate(() => {
                 const webdriver = navigator.webdriver;
-                const hasWebGPU = !!navigator.gpu;
                 const canvas = document.createElement('canvas');
                 const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
                 const hasWebGL = !!gl;
@@ -509,7 +506,6 @@ class BrowserController {
                 const hasPermissions = !!navigator.permissions;
                 return {
                     webdriver,
-                    hasWebGPU,
                     hasWebGL,
                     webGLVendor,
                     webGLRenderer,
@@ -537,12 +533,6 @@ class BrowserController {
             }
             else {
                 logger_1.logger.info('BrowserController', '✅ navigator.webdriver = false');
-            }
-            if (!diagnostics.hasWebGPU) {
-                issues.push('⚠️  WebGPU 不可用 (已启用伪造)');
-            }
-            else {
-                logger_1.logger.info('BrowserController', '✅ WebGPU 可用');
             }
             if (!diagnostics.hasWebGL) {
                 issues.push('❌ WebGL 不可用');

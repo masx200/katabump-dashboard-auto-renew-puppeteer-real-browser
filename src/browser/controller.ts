@@ -1,16 +1,16 @@
 /**
  * 浏览器控制器
  */
-
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import puppeteer from 'puppeteer';
+// import puppeteer from 'puppeteer-extra';
+// import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Browser, Page, LaunchOptions } from 'puppeteer';
 import { BrowserConfig } from '../types';
 import { logger } from '../utils/logger';
 import { RenewalError, ErrorType } from '../types';
 
 // 使用 stealth 插件隐藏自动化特征
-puppeteer.use(StealthPlugin());
+// puppeteer.use(StealthPlugin());
 
 /**
  * 等待指定毫秒数
@@ -742,7 +742,7 @@ export class BrowserController {
         const webdriver = (navigator as any).webdriver;
 
         // 检查 WebGPU 支持
-        const hasWebGPU = !!(navigator as any).gpu;
+        // const hasWebGPU = !!(navigator as any).gpu;
 
         // 检查 WebGL 支持
         const canvas = document.createElement('canvas');
@@ -789,7 +789,7 @@ export class BrowserController {
 
         return {
           webdriver,
-          hasWebGPU,
+          // hasWebGPU,
           hasWebGL,
           webGLVendor,
           webGLRenderer,
@@ -821,11 +821,11 @@ export class BrowserController {
         logger.info('BrowserController', '✅ navigator.webdriver = false');
       }
 
-      if (!diagnostics.hasWebGPU) {
-        issues.push('⚠️  WebGPU 不可用 (已启用伪造)');
-      } else {
-        logger.info('BrowserController', '✅ WebGPU 可用');
-      }
+      // if (!diagnostics.hasWebGPU) {
+      //   issues.push('⚠️  WebGPU 不可用 (已启用伪造)');
+      // } else {
+      //   logger.info('BrowserController', '✅ WebGPU 可用');
+      // }
 
       if (!diagnostics.hasWebGL) {
         issues.push('❌ WebGL 不可用');
