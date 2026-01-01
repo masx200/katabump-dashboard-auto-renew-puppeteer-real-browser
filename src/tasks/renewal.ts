@@ -209,6 +209,7 @@ export class RenewalExecutor {
             logger.info('RenewalExecutor', `✅ 验证码已完成 (耗时: ${i}s)`);
             break;
           }
+          await delay(10000)
           const captchaClicked = await this.clickCaptchaArea();
 
           if (captchaClicked) {
@@ -298,6 +299,9 @@ export class RenewalExecutor {
 
       // 使用 Puppeteer 的鼠标点击 API
       // 这种方式可以穿透 Shadow DOM (closed) 并触发真实的事件
+      // 先移动鼠标到目标坐标,再进行点击,更模拟真实用户行为
+      // 使用 steps 参数实现平滑移动,避免瞬移
+      await this.page.mouse.move(clickX, clickY, { steps: 10 });
       await this.page.mouse.click(clickX, clickY);
 
       logger.info('RenewalExecutor', '✅ 已使用坐标点击验证码区域');

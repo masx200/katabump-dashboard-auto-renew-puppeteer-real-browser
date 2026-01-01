@@ -137,6 +137,7 @@ class RenewalExecutor {
                         logger_1.logger.info('RenewalExecutor', `✅ 验证码已完成 (耗时: ${i}s)`);
                         break;
                     }
+                    await delay(10000);
                     const captchaClicked = await this.clickCaptchaArea();
                     if (captchaClicked) {
                         logger_1.logger.info('RenewalExecutor', '✅ 已点击验证码区域,等待验证完成...');
@@ -193,6 +194,7 @@ class RenewalExecutor {
             const clickX = rect.x + 200;
             const clickY = rect.y + (rect.height / 2);
             logger_1.logger.info('RenewalExecutor', `计算点击坐标: (${clickX.toFixed(0)}, ${clickY.toFixed(0)})`);
+            await this.page.mouse.move(clickX, clickY, { steps: 10 });
             await this.page.mouse.click(clickX, clickY);
             logger_1.logger.info('RenewalExecutor', '✅ 已使用坐标点击验证码区域');
             return true;
