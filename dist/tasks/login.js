@@ -39,30 +39,14 @@ class LoginProcessor {
     async waitForPageLoad() {
         logger_1.logger.info('LoginProcessor', '等待页面加载完成...');
         await delay(2000);
-        const alreadyLoggedIn = await this.page.evaluate(() => {
-            const url = window.location.href;
-            const hasDashboardContent = document.body.textContent?.includes('Dashboard') ||
-                document.body.textContent?.includes('Servers') ||
-                document.body.textContent?.includes('服务器') ||
-                document.querySelector('.dashboard') !== null;
-            if (url.includes('/dashboard') || url.includes('/servers') || hasDashboardContent) {
-                return true;
-            }
-            return false;
-        });
-        if (alreadyLoggedIn) {
-            logger_1.logger.info('LoginProcessor', '检测到已登录状态');
+        const currentUrl = this.page.url();
+        logger_1.logger.info('LoginProcessor', `当前页面 URL: ${currentUrl}`);
+        if (!currentUrl.endsWith('/login')) {
+            logger_1.logger.info('LoginProcessor', 'URL 不以 /login 结尾,检测到已登录状态');
             return 'already_logged_in';
         }
-        try {
-            await this.page.waitForSelector('input[type="email"], input[name="email"], input[type="text"]', {
-                timeout: 10000,
-            });
-            return 'needs_login';
-        }
-        catch (error) {
-            throw new types_1.RenewalError(types_1.ErrorType.PARSE_ERROR, '未找到登录表单,可能页面结构已变化或不是登录页面');
-        }
+        logger_1.logger.info('LoginProcessor', 'URL 以 /login 结尾,需要执行登录');
+        return 'needs_login';
     }
     async fillLoginForm(credentials) {
         logger_1.logger.info('LoginProcessor', '正在填写登录表单...');

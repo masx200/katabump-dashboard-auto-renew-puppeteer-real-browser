@@ -66,42 +66,22 @@ export class LoginProcessor {
   private async waitForPageLoad(): Promise<'needs_login' | 'already_logged_in'> {
     logger.info('LoginProcessor', '等待页面加载完成...');
 
-    // 首先检查是否已经在登录后的页面
-    await delay(2000); // 等待页面稳定
+    // 等待页面稳定
+    await delay(2000);
 
-    const alreadyLoggedIn = await this.page.evaluate(() => {
-      // 检查是否有dashboard页面的特征元素
-      const url = window.location.href;
-      const hasDashboardContent = document.body.textContent?.includes('Dashboard') ||
-                                   document.body.textContent?.includes('Servers') ||
-                                   document.body.textContent?.includes('服务器') ||
-                                   document.querySelector('.dashboard') !== null;
+    // 通过 URL 判断是否已登录
+    // 如果 URL 不是以 /login 结尾,说明已经登录
+    const currentUrl = this.page.url();
+    logger.info('LoginProcessor', `当前页面 URL: ${currentUrl}`);
 
-      // 如果URL包含dashboard或servers,或者页面包含dashboard相关内容,可能已经登录
-      if (url.includes('/dashboard') || url.includes('/servers') || hasDashboardContent) {
-        return true;
-      }
-
-      return false;
-    });
-
-    if (alreadyLoggedIn) {
-      logger.info('LoginProcessor', '检测到已登录状态');
+    if (!currentUrl.endsWith('/login')) {
+      logger.info('LoginProcessor', 'URL 不以 /login 结尾,检测到已登录状态');
       return 'already_logged_in';
     }
 
-    // 等待常见的登录表单元素出现
-    try {
-      await this.page.waitForSelector('input[type="email"], input[name="email"], input[type="text"]', {
-        timeout: 10000,
-      });
-      return 'needs_login';
-    } catch (error) {
-      throw new RenewalError(
-        ErrorType.PARSE_ERROR,
-        '未找到登录表单,可能页面结构已变化或不是登录页面'
-      );
-    }
+    // URL 以 /login 结尾,需要登录
+    logger.info('LoginProcessor', 'URL 以 /login 结尾,需要执行登录');
+    return 'needs_login';
   }
 
   /**
