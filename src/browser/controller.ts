@@ -89,6 +89,24 @@ export class BrowserController {
           // '--disable-accelerated-mjpeg-decode',  // 移除
           '--disable-infobars',
           '--window-position=0,0',
+          // 额外的反检测参数
+          '--hide-scrollbars',
+          '--mute-audio',
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--disable-features=Translate',
+          '--disable-features=media-router', // 禁用媒体路由器
+          '--disable-features=CalculateNativeWinOcclusion', // 禁用窗口遮挡计算
+          '--disable-features=InterestFeedContentSuggestions', // 禁用内容建议
+          // 强制启用 WebGL 和 WebGPU 支持
+          '--enable-webgl',
+          '--enable-webgl2-compute-context',
+          '--enable-gpu-rasterization',
+          '--enable-zero-copy',
+          // 强制使用桌面级 OpenGL 驱动
+          '--use-gl=desktop',
+          '--use-angle=gl',
+          '--ignore-gpu-blocklist',
           // 配置 DNS over HTTPS (DoH) - 使用正确的 fieldtrial 参数
           ...this.getDoHArgs(),
         ],
