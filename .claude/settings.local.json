@@ -10,7 +10,11 @@
       "Bash(if exist jest.config.js del jest.config.js)",
       "Bash(pnpm test -- --run)",
       "Bash(if not exist screenshots mkdir screenshots)",
-      "Bash(npx ts-node:*)"
+      "Bash(npx ts-node:*)",
+      "Bash(pnpm test:*)",
+      "Bash(npx puppeteer browsers install:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)"
     ]
   }
 }

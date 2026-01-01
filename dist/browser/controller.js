@@ -96,7 +96,6 @@ class BrowserController {
                     "--enable-webgpu-developer-features",
                     "--enable-unsafe-webgpu",
                     "--disable-gpu-vsync",
-                    "--disable-software-rasterizer",
                     "--enable-unsafe-swiftshader",
                     '--disable-dev-shm-usage',
                     '--disable-background-timer-throttling',

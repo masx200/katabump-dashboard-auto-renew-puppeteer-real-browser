@@ -157,7 +157,7 @@ export class BrowserController {
           "--enable-webgpu-developer-features",
           "--enable-unsafe-webgpu",
           "--disable-gpu-vsync",
-          "--disable-software-rasterizer",
+          // 移除 '--disable-software-rasterizer' 以允许软件回退
           "--enable-unsafe-swiftshader",
 
           // 性能优化参数
