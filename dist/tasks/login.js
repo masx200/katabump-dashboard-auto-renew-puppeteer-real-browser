@@ -102,6 +102,21 @@ class LoginProcessor {
         await this.page.evaluate((el) => el.value = '', passwordInput);
         await passwordInput.type(credentials.password, { delay: 50 });
         logger_1.logger.info('LoginProcessor', '密码已填写');
+        // 点击 "Remember me" 复选框
+        try {
+            const rememberCheckbox = await this.page.$('input[name="remember"]');
+            if (rememberCheckbox) {
+                // 检查是否已选中,如果未选中则点击
+                const isChecked = await this.page.evaluate((el) => el.checked, rememberCheckbox);
+                if (!isChecked) {
+                    await rememberCheckbox.click();
+                    logger_1.logger.info('LoginProcessor', '已勾选 "Remember me"');
+                }
+            }
+        }
+        catch (error) {
+            logger_1.logger.warn('LoginProcessor', '未找到 "Remember me" 复选框,跳过');
+        }
     }
     /**
      * 提交登录表单

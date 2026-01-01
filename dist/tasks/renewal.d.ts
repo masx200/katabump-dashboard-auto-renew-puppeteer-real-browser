@@ -32,6 +32,11 @@ export declare class RenewalExecutor {
      */
     private clickCaptchaArea;
     /**
+     * 执行随机鼠标移动,模拟真实用户行为
+     * 在点击验证码之前进行随机方向的平滑移动
+     */
+    private performRandomMouseMovement;
+    /**
      * 点击模态框中的 Renew 按钮
      */
     private clickModalRenewButton;

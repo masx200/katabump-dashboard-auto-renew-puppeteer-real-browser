@@ -224,6 +224,8 @@ class RenewalExecutor {
     async clickCaptchaArea() {
         try {
             logger_1.logger.info('RenewalExecutor', '查找 Captcha label 并计算点击坐标...');
+            // 先执行随机鼠标移动,模拟真实用户行为
+            await this.performRandomMouseMovement();
             // 查找 Captcha label 并获取其位置
             const rect = await this.page.evaluate(() => {
                 const labels = Array.from(document.querySelectorAll('label'));
@@ -254,6 +256,35 @@ class RenewalExecutor {
         catch (error) {
             logger_1.logger.warn('RenewalExecutor', '点击验证码区域失败', error);
             return false;
+        }
+    }
+    /**
+     * 执行随机鼠标移动,模拟真实用户行为
+     * 在点击验证码之前进行随机方向的平滑移动
+     */
+    async performRandomMouseMovement() {
+        try {
+            logger_1.logger.info('RenewalExecutor', '执行随机鼠标移动...');
+            // 获取当前鼠标位置(假设在页面中心)
+            const currentX = 960;
+            const currentY = 540;
+            // 进行 3-5 次随机移动
+            const moves = Math.floor(Math.random() * 3) + 3;
+            for (let i = 0; i < moves; i++) {
+                // 生成随机目标点(在合理范围内)
+                const targetX = Math.floor(Math.random() * 400) + 760; // 760-1160
+                const targetY = Math.floor(Math.random() * 300) + 390; // 390-690
+                // 计算移动步数(距离越远步数越多,模拟更平滑的移动)
+                const distance = Math.sqrt(Math.pow(targetX - currentX, 2) + Math.pow(targetY - currentY, 2));
+                const steps = Math.max(10, Math.floor(distance / 20));
+                await this.page.mouse.move(targetX, targetY, { steps });
+                // 每次移动后短暂停顿,更真实
+                await delay(Math.floor(Math.random() * 200) + 100);
+            }
+            logger_1.logger.info('RenewalExecutor', `✅ 已完成 ${moves} 次随机鼠标移动`);
+        }
+        catch (error) {
+            logger_1.logger.warn('RenewalExecutor', '随机鼠标移动失败,继续执行', error);
         }
     }
     /**
