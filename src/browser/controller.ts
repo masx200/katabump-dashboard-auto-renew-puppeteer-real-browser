@@ -156,6 +156,9 @@ export class BrowserController {
           '--ignore-gpu-blocklist',
           "--enable-webgpu-developer-features",
           "--enable-unsafe-webgpu",
+          "--disable-gpu-vsync",
+          "--disable-software-rasterizer",
+          "--enable-unsafe-swiftshader",
 
           // 性能优化参数
           '--disable-dev-shm-usage',
