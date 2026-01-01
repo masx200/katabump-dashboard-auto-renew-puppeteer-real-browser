@@ -194,7 +194,29 @@ class BrowserController {
                     attributes = attributes || {};
                     attributes.preserveDrawingBuffer = true;
                 }
-                return originalGetContext.call(this, contextType, attributes);
+                try {
+                    const ctx = originalGetContext.call(this, contextType, attributes);
+                    if (ctx && (contextType === 'webgl' || contextType === 'webgl2')) {
+                        const canvas = this;
+                        canvas.addEventListener('webglcontextlost', (e) => {
+                            e.preventDefault();
+                            console.warn('WebGL context lost, attempting restoration...');
+                            setTimeout(() => {
+                                const restoreCtx = originalGetContext.call(canvas, contextType, attributes);
+                                if (restoreCtx) {
+                                    const extension = restoreCtx.getExtension('WEBGL_lose_context');
+                                    if (extension) {
+                                        extension.restoreContext();
+                                    }
+                                }
+                            }, 100);
+                        }, false);
+                    }
+                    return ctx;
+                }
+                catch (e) {
+                    return null;
+                }
             };
             const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
             HTMLCanvasElement.prototype.toDataURL = function (type) {
@@ -314,6 +336,55 @@ class BrowserController {
                 catch (e) {
                     return null;
                 }
+            };
+            const originalCreateObjectURL = URL.createObjectURL;
+            URL.createObjectURL = function (object) {
+                try {
+                    return originalCreateObjectURL.call(this, object);
+                }
+                catch (e) {
+                    return 'blob:' + window.location.origin + '/' + Math.random().toString(36).substring(7);
+                }
+            };
+            const originalAddEventListener = EventTarget.prototype.addEventListener;
+            EventTarget.prototype.addEventListener = function (type, listener, options) {
+                try {
+                    return originalAddEventListener.call(this, type, listener, options);
+                }
+                catch (e) {
+                    return;
+                }
+            };
+            const originalFetch = window.fetch;
+            window.fetch = function (input, init) {
+                const url = typeof input === 'string' ? input : input.url;
+                if (url.includes('challenges.cloudflare.com')) {
+                    console.log('[Fetch] Turnstile request:', url);
+                }
+                return originalFetch.call(this, input, init).then(response => {
+                    if (response.status === 401 && url.includes('challenges.cloudflare.com')) {
+                        console.warn('[Fetch] PAT challenge returned 401 for:', url);
+                    }
+                    return response;
+                }).catch(error => {
+                    if (url.includes('challenges.cloudflare.com')) {
+                        console.error('[Fetch] Turnstile request failed:', url, error);
+                    }
+                    throw error;
+                });
+            };
+            const originalError = console.error;
+            console.error = function (...args) {
+                const message = args[0];
+                if (typeof message === 'string') {
+                    if (message.includes('TurnstileError') && message.includes('106010')) {
+                        return;
+                    }
+                    if (message.includes('font-size:0;color:transparent')) {
+                        return;
+                    }
+                }
+                originalError.apply(console, args);
             };
         });
     }

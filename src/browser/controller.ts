@@ -288,7 +288,30 @@ export class BrowserController {
           attributes = attributes || {};
           attributes.preserveDrawingBuffer = true;
         }
-        return originalGetContext.call(this, contextType, attributes);
+
+        try {
+          const ctx = originalGetContext.call(this, contextType, attributes);
+          if (ctx && (contextType === 'webgl' || contextType === 'webgl2')) {
+            // 监听 context lost 事件并尝试恢复
+            const canvas = this;
+            canvas.addEventListener('webglcontextlost', (e: any) => {
+              e.preventDefault();
+              console.warn('WebGL context lost, attempting restoration...');
+              setTimeout(() => {
+                const restoreCtx = originalGetContext.call(canvas, contextType, attributes);
+                if (restoreCtx) {
+                  const extension = (restoreCtx as any).getExtension('WEBGL_lose_context');
+                  if (extension) {
+                    extension.restoreContext();
+                  }
+                }
+              }, 100);
+            }, false);
+          }
+          return ctx;
+        } catch (e) {
+          return null;
+        }
       };
 
       const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
@@ -437,6 +460,76 @@ export class BrowserController {
         } catch (e) {
           return null;
         }
+      };
+
+      // 20. 修复 Blob URL 支持 (Turnstile 需要使用 blob URL)
+      const originalCreateObjectURL = URL.createObjectURL;
+      URL.createObjectURL = function(object: any) {
+        try {
+          return originalCreateObjectURL.call(this, object);
+        } catch (e) {
+          // 如果创建失败,返回一个假的 blob URL
+          return 'blob:' + window.location.origin + '/' + Math.random().toString(36).substring(7);
+        }
+      };
+
+      // 21. 防止 null 元素的 addEventListener 崩溃
+      const originalAddEventListener = EventTarget.prototype.addEventListener;
+      EventTarget.prototype.addEventListener = function(
+        this: EventTarget,
+        type: string,
+        listener: any,
+        options?: any
+      ) {
+        try {
+          return originalAddEventListener.call(this, type, listener, options);
+        } catch (e) {
+          // 静默忽略错误
+          return;
+        }
+      };
+
+      // 22. 增强 fetch 拦截 - 处理 PAT 挑战
+      const originalFetch = window.fetch;
+      window.fetch = function(input: any, init?: any) {
+        const url = typeof input === 'string' ? input : input.url;
+
+        // 记录 Turnstile 相关的请求
+        if (url.includes('challenges.cloudflare.com')) {
+          console.log('[Fetch] Turnstile request:', url);
+        }
+
+        return originalFetch.call(this, input, init).then(response => {
+          // 如果是 401 错误且与 PAT 相关,记录警告
+          if (response.status === 401 && url.includes('challenges.cloudflare.com')) {
+            console.warn('[Fetch] PAT challenge returned 401 for:', url);
+          }
+          return response;
+        }).catch(error => {
+          // 捕获 fetch 错误但不中断
+          if (url.includes('challenges.cloudflare.com')) {
+            console.error('[Fetch] Turnstile request failed:', url, error);
+          }
+          throw error;
+        });
+      };
+
+      // 23. 防止 console 错误被过度记录
+      const originalError = console.error;
+      console.error = function(...args: any[]) {
+        // 过滤掉 Turnstile 的重复错误
+        const message = args[0];
+        if (typeof message === 'string') {
+          if (message.includes('TurnstileError') && message.includes('106010')) {
+            // 降低日志频率
+            return;
+          }
+          if (message.includes('font-size:0;color:transparent')) {
+            // 忽略这些调试信息
+            return;
+          }
+        }
+        originalError.apply(console, args);
       };
     });
   }
