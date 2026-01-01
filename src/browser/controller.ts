@@ -54,8 +54,9 @@ export class BrowserController {
           width: 1920,
           height: 1080,
         },
-        headless: this.config.headless ?? true,
+        headless:  false,//this.config.headless ?? true,
         args: [
+          '--disable-software-rasterizer',
           '--window-size=1920,1080',
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -81,6 +82,7 @@ export class BrowserController {
           '--disable-popup-blocking',
           '--disable-prompt-on-repost',
           '--disable-features=VizDisplayCompositor',
+          "--enable-unsafe-swiftshader",
           // 启用 GPU 支持 (禁用 --disable-gpu, --disable-software-rasterizer)
           // '--disable-gpu',  // 移除: Cloudflare 需要 GPU 来进行 WebGPU 检测
           // '--disable-software-rasterizer',  // 移除: 需要软件光栅化作为后备
