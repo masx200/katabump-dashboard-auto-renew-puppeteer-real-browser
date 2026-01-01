@@ -362,23 +362,9 @@ export class BrowserController {
 
         try {
           const ctx = originalGetContext.call(this, contextType, attributes);
-          if (ctx && (contextType === 'webgl' || contextType === 'webgl2')) {
-            // 监听 context lost 事件并尝试恢复
-            const canvas = this;
-            canvas.addEventListener('webglcontextlost', (e: any) => {
-              e.preventDefault();
-              console.warn('WebGL context lost, attempting restoration...');
-              setTimeout(() => {
-                const restoreCtx = originalGetContext.call(canvas, contextType, attributes);
-                if (restoreCtx) {
-                  const extension = (restoreCtx as any).getExtension('WEBGL_lose_context');
-                  if (extension) {
-                    extension.restoreContext();
-                  }
-                }
-              }, 100);
-            }, false);
-          }
+          // ❌ 不添加 webglcontextlost 事件监听器
+          // 原因: 在某些元素上添加监听器可能导致 Turnstile 初始化失败
+          // WebGL context lost 应该由浏览器自己处理
           return ctx;
         } catch (e) {
           return null;
@@ -477,25 +463,10 @@ export class BrowserController {
         return instance;
       };
 
-      // 18. 防止 getBoundingClientRect 在 null 元素上崩溃
-      const originalGetBBox = Element.prototype.getBoundingClientRect;
-      Element.prototype.getBoundingClientRect = function () {
-        // 如果元素不在文档中，返回一个默认的边界框
-        if (!this.isConnected) {
-          return {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: 0,
-            toJSON: () => ({}),
-          };
-        }
-        return originalGetBBox.call(this);
-      };
+      // 18. ❌ 不覆盖 getBoundingClientRect
+      // 原因: Turnstile 依赖此方法获取元素位置
+      // 覆盖它会导致 Turnstile 报错 "Cannot read properties of null (reading 'getBoundingClientRect')"
+      // 保持原始方法
 
       // 19. 防止 querySelector 在 shadow-root(closed) 中崩溃
       const originalQuerySelector = Element.prototype.querySelector;
@@ -518,21 +489,10 @@ export class BrowserController {
         }
       };
 
-      // 21. 防止 null 元素的 addEventListener 崩溃
-      const originalAddEventListener = EventTarget.prototype.addEventListener;
-      EventTarget.prototype.addEventListener = function(
-        this: EventTarget,
-        type: string,
-        listener: any,
-        options?: any
-      ) {
-        try {
-          return originalAddEventListener.call(this, type, listener, options);
-        } catch (e) {
-          // 静默忽略错误
-          return;
-        }
-      };
+      // 21. ❌ 不覆盖 addEventListener
+      // 原因: Turnstile 依赖此方法绑定事件监听器
+      // 覆盖它会导致 Turnstile 报错 "Cannot read properties of null (reading 'addEventListener')"
+      // 保持原始方法
 
       // 22. 增强 fetch 拦截 - 处理 PAT 挑战
       const originalFetch = window.fetch;

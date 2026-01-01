@@ -225,22 +225,6 @@ class BrowserController {
                 }
                 try {
                     const ctx = originalGetContext.call(this, contextType, attributes);
-                    if (ctx && (contextType === 'webgl' || contextType === 'webgl2')) {
-                        const canvas = this;
-                        canvas.addEventListener('webglcontextlost', (e) => {
-                            e.preventDefault();
-                            console.warn('WebGL context lost, attempting restoration...');
-                            setTimeout(() => {
-                                const restoreCtx = originalGetContext.call(canvas, contextType, attributes);
-                                if (restoreCtx) {
-                                    const extension = restoreCtx.getExtension('WEBGL_lose_context');
-                                    if (extension) {
-                                        extension.restoreContext();
-                                    }
-                                }
-                            }, 100);
-                        }, false);
-                    }
                     return ctx;
                 }
                 catch (e) {
@@ -310,23 +294,6 @@ class BrowserController {
                 };
                 return instance;
             };
-            const originalGetBBox = Element.prototype.getBoundingClientRect;
-            Element.prototype.getBoundingClientRect = function () {
-                if (!this.isConnected) {
-                    return {
-                        x: 0,
-                        y: 0,
-                        width: 0,
-                        height: 0,
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        left: 0,
-                        toJSON: () => ({}),
-                    };
-                }
-                return originalGetBBox.call(this);
-            };
             const originalQuerySelector = Element.prototype.querySelector;
             Element.prototype.querySelector = function (selectors) {
                 try {
@@ -343,15 +310,6 @@ class BrowserController {
                 }
                 catch (e) {
                     return 'blob:' + window.location.origin + '/' + Math.random().toString(36).substring(7);
-                }
-            };
-            const originalAddEventListener = EventTarget.prototype.addEventListener;
-            EventTarget.prototype.addEventListener = function (type, listener, options) {
-                try {
-                    return originalAddEventListener.call(this, type, listener, options);
-                }
-                catch (e) {
-                    return;
                 }
             };
             const originalFetch = window.fetch;

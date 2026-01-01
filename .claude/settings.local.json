@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "mcp__tavily__tavily_search",
       "Bash(pnpm init)",
       "Bash(pnpm add puppeteer)",
       "Bash(pnpm add:*)",
@@ -14,7 +15,9 @@
       "Bash(pnpm test:*)",
       "Bash(npx puppeteer browsers install:*)",
       "Bash(timeout:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(if exist:*)",
+      "Bash(powershell:*)"
     ]
   }
 }
