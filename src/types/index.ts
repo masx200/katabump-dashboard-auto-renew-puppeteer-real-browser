@@ -84,6 +84,8 @@ export interface RenewalResult {
     oldExpiryDate?: string;
     newExpiryDate?: string;
     renewalDuration?: string;
+    /** 额外信息（如"还未到续期时间"的详细消息） */
+    info?: string;
   };
   error?: {
     code: string;

@@ -513,6 +513,38 @@ export class RenewalExecutor {
     logger.info('RenewalExecutor', '验证续期结果...');
 
     try {
+      // 首先检查是否显示 "还未到续期时间" 的消息
+      const notYetRenewableMessage = await this.page.evaluate(() => {
+        const pageText = document.body.textContent || '';
+        // 检查 "You can't renew your server yet" 类型的消息
+        const notRenewablePatterns = [
+          /can't renew your server yet/i,
+          /cannot renew your server yet/i,
+          /will be able to renew/i,
+          /in \d+ day\(s\)/i,
+        ];
+
+        for (const pattern of notRenewablePatterns) {
+          if (pattern.test(pageText)) {
+            return pageText.match(pattern)?.[0] || 'Not yet renewable';
+          }
+        }
+
+        return null;
+      });
+
+      if (notYetRenewableMessage) {
+        logger.info('RenewalExecutor', `✅ 服务器还未到续期时间: ${notYetRenewableMessage}`);
+        return {
+          success: true,
+          serverId,
+          message: '服务器还未到续期时间（无需续期）',
+          details: {
+            info: notYetRenewableMessage,
+          },
+        };
+      }
+
       // 检查是否有成功提示
       const successIndicators = [
         '续期成功',

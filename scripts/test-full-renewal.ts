@@ -68,9 +68,16 @@ async function runFullRenewalTest() {
       const result = await renewalExecutor.executeRenewal(server.id);
 
       if (result.success) {
-        console.log('   ✅ 续期成功');
-        if (result.details?.newExpiryDate) {
-          console.log(`   新到期时间: ${result.details.newExpiryDate}`);
+        if (result.message.includes('还未到续期时间')) {
+          console.log('   ⏳ 服务器还未到续期时间');
+          if (result.details?.info) {
+            console.log(`   信息: ${result.details.info}`);
+          }
+        } else {
+          console.log('   ✅ 续期成功');
+          if (result.details?.newExpiryDate) {
+            console.log(`   新到期时间: ${result.details.newExpiryDate}`);
+          }
         }
       } else {
         console.log(`   ❌ 续期失败: ${result.message}`);

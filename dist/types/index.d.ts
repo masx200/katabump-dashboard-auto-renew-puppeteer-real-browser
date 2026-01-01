@@ -55,6 +55,7 @@ export interface RenewalResult {
         oldExpiryDate?: string;
         newExpiryDate?: string;
         renewalDuration?: string;
+        info?: string;
     };
     error?: {
         code: string;
