@@ -89,6 +89,7 @@ describe('Puppeteer Real Browser - Cloudflare Tests', () => {
 
       console.error(e)
       await delay(150000)
+      throw e
     } finally {
       await browser.close();
       console.log('Browser closed');
@@ -143,6 +144,7 @@ describe('Puppeteer Real Browser - Cloudflare Tests', () => {
 
       console.error(e)
       await delay(150000)
+       throw e
     } finally {
       await browser.close();
     }
@@ -190,6 +192,7 @@ describe('Puppeteer Real Browser - Cloudflare Tests', () => {
 
       console.error(e)
       await delay(150000)
+       throw e
     } finally {
       await browser.close();
     }
