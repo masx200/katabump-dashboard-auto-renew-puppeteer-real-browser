@@ -150,6 +150,47 @@ export class BrowserController {
     try {
       const page = await this.browser.newPage();
 
+      // 添加控制台日志监听 - 捕获浏览器控制台的所有输出
+      page.on('console', (msg) => {
+        const type = msg.type();
+        const text = msg.text();
+
+        // 只记录错误、警告和重要的日志
+        if (type === 'error') {
+          logger.error('BrowserConsole', text, new Error(text));
+          // 如果是错误,尝试获取错误堆栈
+          msg.args().forEach(arg => {
+            arg.jsonValue().then((val: any) => {
+              if (val && val.stack) {
+                logger.error('BrowserConsoleStack', val.stack);
+              }
+            }).catch(() => {});
+          });
+        } else if (type === 'warn') {
+          logger.warn('BrowserConsole', text);
+        } else if (type === 'log' || type === 'info' || type === 'debug') {
+          // 记录包含 Turnstile、Cloudflare、WebGPU 等关键字的日志
+          if (text.match(/Turnstile|Cloudflare|WebGPU|challenge|captcha|turnstile/i)) {
+            logger.info('BrowserConsole', text);
+          }
+        }
+      });
+
+      // 监听页面错误
+      page.on('pageerror', (error: unknown) => {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error('PageError', err.message, err);
+      });
+
+      // 监听请求失败
+      page.on('requestfailed', (request) => {
+        const failure = request.failure();
+        const url = request.url();
+        if (failure && url.includes('challenges.cloudflare.com')) {
+          logger.error('RequestFailed', `${url} - ${failure.errorText}`);
+        }
+      });
+
       // 设置视口大小
       await page.setViewport({
         width: this.config.windowWidth ?? 1920,
@@ -173,6 +214,9 @@ export class BrowserController {
 
       this.currentPage = page;
       logger.info('BrowserController', '新页面创建成功 (已应用反检测脚本)');
+
+      // 自动运行环境诊断 (帮助调试)
+      await this.diagnoseEnvironment();
 
       return page;
     } catch (error) {
@@ -463,17 +507,43 @@ export class BrowserController {
       logger.info('BrowserController', '等待 Cloudflare 验证完成...');
 
       // 检测是否有 Cloudflare 验证
-      const hasCloudflare = await page.evaluate(() => {
-        return (
-          document.querySelector('#turnstile-container') !== null ||
-          document.querySelector('[data-sitekey]') !== null ||
-          window.location.href.includes('challenge-platform')
+      const cloudflareInfo = await page.evaluate(() => {
+        const turnstileContainer = document.querySelector('#turnstile-container');
+        const sitekeyElement = document.querySelector('[data-sitekey]');
+        const hasChallengeUrl = window.location.href.includes('challenge-platform');
+
+        // 检查 Turnstile iframe
+        const iframes = Array.from(document.querySelectorAll('iframe'));
+        const turnstileIframe = iframes.find(iframe =>
+          iframe.src && iframe.src.includes('challenges.cloudflare.com')
         );
+
+        // 检查是否有错误信息
+        const errorElements = document.querySelectorAll('[class*="error"], [class*="Error"]');
+        const errors = Array.from(errorElements).map(el => el.textContent).filter(Boolean);
+
+        return {
+          hasCloudflare: !!(turnstileContainer || sitekeyElement || hasChallengeUrl || turnstileIframe),
+          hasTurnstileContainer: !!turnstileContainer,
+          hasSitekeyElement: !!sitekeyElement,
+          hasChallengeUrl: hasChallengeUrl,
+          hasTurnstileIframe: !!turnstileIframe,
+          turnstileIframeSrc: turnstileIframe?.src || null,
+          errors: errors,
+          url: window.location.href,
+        };
       });
 
-      if (!hasCloudflare) {
+      logger.info('BrowserController', `Cloudflare 检测结果: ${JSON.stringify(cloudflareInfo, null, 2)}`);
+
+      if (!cloudflareInfo.hasCloudflare) {
         logger.info('BrowserController', '未检测到 Cloudflare 验证');
         return;
+      }
+
+      // 如果有错误,记录并抛出异常
+      if (cloudflareInfo.errors && cloudflareInfo.errors.length > 0) {
+        logger.error('BrowserController', `检测到页面错误: ${cloudflareInfo.errors.join(', ')}`);
       }
 
       // 等待验证完成 (最多等待 5 分钟)
@@ -495,6 +565,127 @@ export class BrowserController {
         ErrorType.VERIFY_ERROR,
         `Cloudflare 验证超时: ${error instanceof Error ? error.message : String(error)}`
       );
+    }
+  }
+
+  /**
+   * 诊断浏览器环境 - 检查关键的浏览器指纹
+   */
+  async diagnoseEnvironment(): Promise<void> {
+    const page = this.getCurrentPage();
+
+    try {
+      logger.info('BrowserController', '正在诊断浏览器环境...');
+
+      const diagnostics = await page.evaluate(() => {
+        // 检查 navigator.webdriver
+        const webdriver = (navigator as any).webdriver;
+
+        // 检查 WebGPU 支持
+        const hasWebGPU = !!(navigator as any).gpu;
+
+        // 检查 WebGL 支持
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl') as WebGLRenderingContext | null;
+        const hasWebGL = !!gl;
+        let webGLVendor = null;
+        let webGLRenderer = null;
+
+        if (gl) {
+          const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+          if (debugInfo) {
+            webGLVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+            webGLRenderer = gl.getContextAttributes();
+          }
+        }
+
+        // 检查 Canvas 支持
+        const ctx2d = canvas.getContext('2d');
+        const hasCanvas2D = !!ctx2d;
+
+        // 检查 plugins
+        const plugins = Array.from(navigator.plugins).map(p => p.name);
+
+        // 检查 languages
+        const languages = navigator.languages;
+
+        // 检查 platform
+        const platform = navigator.platform;
+
+        // 检查 hardwareConcurrency
+        const hardwareConcurrency = navigator.hardwareConcurrency;
+
+        // 检查 deviceMemory
+        const deviceMemory = (navigator as any).deviceMemory;
+
+        // 检查 connection
+        const connection = (navigator as any).connection;
+
+        // 检查 chrome 对象
+        const hasChrome = !!(window as any).chrome;
+
+        // 检查 permissions
+        const hasPermissions = !!navigator.permissions;
+
+        return {
+          webdriver,
+          hasWebGPU,
+          hasWebGL,
+          webGLVendor,
+          webGLRenderer,
+          hasCanvas2D,
+          pluginsCount: plugins.length,
+          plugins: plugins.slice(0, 3), // 只返回前3个
+          languages,
+          platform,
+          hardwareConcurrency,
+          deviceMemory,
+          connection: connection ? {
+            effectiveType: connection.effectiveType,
+            rtt: connection.rtt,
+            downlink: connection.downlink,
+          } : null,
+          hasChrome,
+          hasPermissions,
+          userAgent: navigator.userAgent.substring(0, 50) + '...', // 截断
+        };
+      });
+
+      logger.info('BrowserController', `浏览器环境诊断结果:\n${JSON.stringify(diagnostics, null, 2)}`);
+
+      // 检查是否有问题
+      const issues: string[] = [];
+      if (diagnostics.webdriver === true) {
+        issues.push('❌ navigator.webdriver = true (应该为 false)');
+      } else {
+        logger.info('BrowserController', '✅ navigator.webdriver = false');
+      }
+
+      if (!diagnostics.hasWebGPU) {
+        issues.push('⚠️  WebGPU 不可用 (已启用伪造)');
+      } else {
+        logger.info('BrowserController', '✅ WebGPU 可用');
+      }
+
+      if (!diagnostics.hasWebGL) {
+        issues.push('❌ WebGL 不可用');
+      } else {
+        logger.info('BrowserController', '✅ WebGL 可用');
+      }
+
+      if (!diagnostics.hasChrome) {
+        issues.push('❌ window.chrome 不存在');
+      } else {
+        logger.info('BrowserController', '✅ window.chrome 存在');
+      }
+
+      if (issues.length > 0) {
+        logger.warn('BrowserController', `发现环境问题:\n${issues.join('\n')}`);
+      } else {
+        logger.info('BrowserController', '✅ 浏览器环境检查通过');
+      }
+    } catch (error) {
+      logger.error('BrowserController', '环境诊断失败', error);
     }
   }
 

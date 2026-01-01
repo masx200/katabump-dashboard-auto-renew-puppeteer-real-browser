@@ -14,6 +14,7 @@ export declare class BrowserController {
     getCurrentPage(): Page;
     navigate(url: string): Promise<void>;
     waitForCloudflareVerification(): Promise<void>;
+    diagnoseEnvironment(): Promise<void>;
     screenshot(filePath?: string): Promise<Buffer | Uint8Array>;
     getHtml(): Promise<string>;
     close(): Promise<void>;

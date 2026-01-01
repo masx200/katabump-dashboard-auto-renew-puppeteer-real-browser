@@ -102,6 +102,39 @@ class BrowserController {
         }
         try {
             const page = await this.browser.newPage();
+            page.on('console', (msg) => {
+                const type = msg.type();
+                const text = msg.text();
+                if (type === 'error') {
+                    logger_1.logger.error('BrowserConsole', text, new Error(text));
+                    msg.args().forEach(arg => {
+                        arg.jsonValue().then((val) => {
+                            if (val && val.stack) {
+                                logger_1.logger.error('BrowserConsoleStack', val.stack);
+                            }
+                        }).catch(() => { });
+                    });
+                }
+                else if (type === 'warn') {
+                    logger_1.logger.warn('BrowserConsole', text);
+                }
+                else if (type === 'log' || type === 'info' || type === 'debug') {
+                    if (text.match(/Turnstile|Cloudflare|WebGPU|challenge|captcha|turnstile/i)) {
+                        logger_1.logger.info('BrowserConsole', text);
+                    }
+                }
+            });
+            page.on('pageerror', (error) => {
+                const err = error instanceof Error ? error : new Error(String(error));
+                logger_1.logger.error('PageError', err.message, err);
+            });
+            page.on('requestfailed', (request) => {
+                const failure = request.failure();
+                const url = request.url();
+                if (failure && url.includes('challenges.cloudflare.com')) {
+                    logger_1.logger.error('RequestFailed', `${url} - ${failure.errorText}`);
+                }
+            });
             await page.setViewport({
                 width: this.config.windowWidth ?? 1920,
                 height: this.config.windowHeight ?? 1080,
@@ -115,6 +148,7 @@ class BrowserController {
             await this.configureLocale(page);
             this.currentPage = page;
             logger_1.logger.info('BrowserController', '新页面创建成功 (已应用反检测脚本)');
+            await this.diagnoseEnvironment();
             return page;
         }
         catch (error) {
@@ -320,14 +354,32 @@ class BrowserController {
         const page = this.getCurrentPage();
         try {
             logger_1.logger.info('BrowserController', '等待 Cloudflare 验证完成...');
-            const hasCloudflare = await page.evaluate(() => {
-                return (document.querySelector('#turnstile-container') !== null ||
-                    document.querySelector('[data-sitekey]') !== null ||
-                    window.location.href.includes('challenge-platform'));
+            const cloudflareInfo = await page.evaluate(() => {
+                const turnstileContainer = document.querySelector('#turnstile-container');
+                const sitekeyElement = document.querySelector('[data-sitekey]');
+                const hasChallengeUrl = window.location.href.includes('challenge-platform');
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                const turnstileIframe = iframes.find(iframe => iframe.src && iframe.src.includes('challenges.cloudflare.com'));
+                const errorElements = document.querySelectorAll('[class*="error"], [class*="Error"]');
+                const errors = Array.from(errorElements).map(el => el.textContent).filter(Boolean);
+                return {
+                    hasCloudflare: !!(turnstileContainer || sitekeyElement || hasChallengeUrl || turnstileIframe),
+                    hasTurnstileContainer: !!turnstileContainer,
+                    hasSitekeyElement: !!sitekeyElement,
+                    hasChallengeUrl: hasChallengeUrl,
+                    hasTurnstileIframe: !!turnstileIframe,
+                    turnstileIframeSrc: turnstileIframe?.src || null,
+                    errors: errors,
+                    url: window.location.href,
+                };
             });
-            if (!hasCloudflare) {
+            logger_1.logger.info('BrowserController', `Cloudflare 检测结果: ${JSON.stringify(cloudflareInfo, null, 2)}`);
+            if (!cloudflareInfo.hasCloudflare) {
                 logger_1.logger.info('BrowserController', '未检测到 Cloudflare 验证');
                 return;
+            }
+            if (cloudflareInfo.errors && cloudflareInfo.errors.length > 0) {
+                logger_1.logger.error('BrowserController', `检测到页面错误: ${cloudflareInfo.errors.join(', ')}`);
             }
             await page.waitForFunction(() => {
                 return (document.querySelector('#turnstile-container') === null &&
@@ -339,6 +391,95 @@ class BrowserController {
         catch (error) {
             logger_1.logger.error('BrowserController', '等待 Cloudflare 验证超时', error);
             throw new types_1.RenewalError(types_1.ErrorType.VERIFY_ERROR, `Cloudflare 验证超时: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+    async diagnoseEnvironment() {
+        const page = this.getCurrentPage();
+        try {
+            logger_1.logger.info('BrowserController', '正在诊断浏览器环境...');
+            const diagnostics = await page.evaluate(() => {
+                const webdriver = navigator.webdriver;
+                const hasWebGPU = !!navigator.gpu;
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                const hasWebGL = !!gl;
+                let webGLVendor = null;
+                let webGLRenderer = null;
+                if (gl) {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        webGLVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+                        webGLRenderer = gl.getContextAttributes();
+                    }
+                }
+                const ctx2d = canvas.getContext('2d');
+                const hasCanvas2D = !!ctx2d;
+                const plugins = Array.from(navigator.plugins).map(p => p.name);
+                const languages = navigator.languages;
+                const platform = navigator.platform;
+                const hardwareConcurrency = navigator.hardwareConcurrency;
+                const deviceMemory = navigator.deviceMemory;
+                const connection = navigator.connection;
+                const hasChrome = !!window.chrome;
+                const hasPermissions = !!navigator.permissions;
+                return {
+                    webdriver,
+                    hasWebGPU,
+                    hasWebGL,
+                    webGLVendor,
+                    webGLRenderer,
+                    hasCanvas2D,
+                    pluginsCount: plugins.length,
+                    plugins: plugins.slice(0, 3),
+                    languages,
+                    platform,
+                    hardwareConcurrency,
+                    deviceMemory,
+                    connection: connection ? {
+                        effectiveType: connection.effectiveType,
+                        rtt: connection.rtt,
+                        downlink: connection.downlink,
+                    } : null,
+                    hasChrome,
+                    hasPermissions,
+                    userAgent: navigator.userAgent.substring(0, 50) + '...',
+                };
+            });
+            logger_1.logger.info('BrowserController', `浏览器环境诊断结果:\n${JSON.stringify(diagnostics, null, 2)}`);
+            const issues = [];
+            if (diagnostics.webdriver === true) {
+                issues.push('❌ navigator.webdriver = true (应该为 false)');
+            }
+            else {
+                logger_1.logger.info('BrowserController', '✅ navigator.webdriver = false');
+            }
+            if (!diagnostics.hasWebGPU) {
+                issues.push('⚠️  WebGPU 不可用 (已启用伪造)');
+            }
+            else {
+                logger_1.logger.info('BrowserController', '✅ WebGPU 可用');
+            }
+            if (!diagnostics.hasWebGL) {
+                issues.push('❌ WebGL 不可用');
+            }
+            else {
+                logger_1.logger.info('BrowserController', '✅ WebGL 可用');
+            }
+            if (!diagnostics.hasChrome) {
+                issues.push('❌ window.chrome 不存在');
+            }
+            else {
+                logger_1.logger.info('BrowserController', '✅ window.chrome 存在');
+            }
+            if (issues.length > 0) {
+                logger_1.logger.warn('BrowserController', `发现环境问题:\n${issues.join('\n')}`);
+            }
+            else {
+                logger_1.logger.info('BrowserController', '✅ 浏览器环境检查通过');
+            }
+        }
+        catch (error) {
+            logger_1.logger.error('BrowserController', '环境诊断失败', error);
         }
     }
     async screenshot(filePath) {
