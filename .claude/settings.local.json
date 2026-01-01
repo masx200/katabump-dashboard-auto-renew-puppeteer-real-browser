@@ -17,7 +17,8 @@
       "Bash(timeout:*)",
       "Bash(ping:*)",
       "Bash(if exist:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(pnpm exec tsc:*)"
     ]
   }
 }

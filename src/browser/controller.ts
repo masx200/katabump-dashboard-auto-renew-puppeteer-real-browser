@@ -1,16 +1,14 @@
 /**
  * 浏览器控制器
  */
-// import puppeteer from 'puppeteer';
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { Browser, Page, LaunchOptions } from 'puppeteer';
+import { connect } from 'puppeteer-real-browser';
 import { BrowserConfig } from '../types';
 import { logger } from '../utils/logger';
 import { RenewalError, ErrorType } from '../types';
 
-// 使用 stealth 插件隐藏自动化特征
-puppeteer.use(StealthPlugin());
+// 使用 any 避免类型冲突（puppeteer-real-browser 的类型与 puppeteer 不兼容）
+type Browser = any;
+type Page = any;
 
 /**
  * 等待指定毫秒数
@@ -123,12 +121,10 @@ export class BrowserController {
     try {
       logger.info('BrowserController', '正在启动浏览器...');
 
-      const launchOptions: LaunchOptions = {
-        defaultViewport: {
-          width: 1920,
-          height: 1080,
-        },
-        headless:  false,//this.config.headless ?? true,
+      // 使用 puppeteer-real-browser 的 connect API
+      const { browser, page } = await connect({
+        headless: this.config.headless ?? false,
+        turnstile: true, // 自动处理 Cloudflare Turnstile
         args: [
           // 窗口和视口设置
           '--window-size=1920,1080',
@@ -141,64 +137,51 @@ export class BrowserController {
           '--disable-dev-shm-usage',
 
           // 反检测 - 核心参数
-          '--disable-blink-features=AutomationControlled', // 最重要：禁用自动化控制特征
+          '--disable-blink-features=AutomationControlled',
 
-          // GPU 和硬件加速 - 关键：Cloudflare Turnstile 需要真实的 GPU 支持
+          // GPU 和硬件加速
           '--enable-gpu',
           '--enable-webgl',
           '--enable-webgl2-compute-context',
           '--enable-gpu-rasterization',
           '--enable-zero-copy',
-          '--enable-vulkan',
-          '--enable-features=Vulkan,WebGPU', // 同时启用 Vulkan 和 WebGPU
-          '--use-gl=desktop', // 使用桌面 OpenGL
-          '--use-angle=gl', // 使用 OpenGL 作为 ANGLE 后端
           '--ignore-gpu-blocklist',
-          "--enable-webgpu-developer-features",
-          "--enable-unsafe-webgpu",
-          "--disable-gpu-vsync",
-          "--enable-unsafe-swiftshader",
-          // 不使用 SwiftShader（会导致 WebGL CONTEXT_LOST）
-          // 移除 "--enable-unsafe-swiftshader"
 
           // 性能优化参数
-          '--disable-dev-shm-usage',
           '--disable-background-timer-throttling',
           '--disable-backgrounding-occluded-windows',
           '--disable-renderer-backgrounding',
-          '--disable-features=VizDisplayCompositor',
-
-          // 移除可能干扰 GPU 的参数
-          // 不使用 --disable-web-security (可能干扰 Turnstile)
-          // 不使用 --disable-features=IsolateOrigins,site-per-process
 
           // 反检测辅助参数
           '--disable-infobars',
           '--no-first-run',
           '--no-default-browser-check',
-          '--disable-features=Translate',
-          '--disable-features=media-router',
 
           // DNS over HTTPS (DoH) 配置
           ...this.getDoHArgs(),
         ],
-      };
+        customConfig: {
+          // userDataDir 在这里设置
+          userDataDir: this.config.userDataDir,
+          // executablePath 需要通过 chromePath 设置
+          chromePath: this.config.executablePath,
+        },
+        connectOption: {
+          defaultViewport: {
+            width: this.config.windowWidth ?? 1920,
+            height: this.config.windowHeight ?? 1080,
+          },
+        },
+      });
 
-      // 如果提供了可执行路径,使用指定的 Chrome
-      if (this.config.executablePath) {
-        launchOptions.executablePath = this.config.executablePath;
-      }
-
-      // 如果提供了用户数据目录,使用它来启用缓存和持久化
-      if (this.config.userDataDir) {
-        launchOptions.userDataDir = this.config.userDataDir;
-        logger.info('BrowserController', `使用用户数据目录: ${this.config.userDataDir}`);
-      }
-
-      this.browser = await puppeteer.launch(launchOptions);
+      this.browser = browser;
+      this.currentPage = page;
 
       const dohUrl = this.config.dohUrl || this.DEFAULT_DOH_URL;
       logger.info('BrowserController', `浏览器启动成功 (DoH: ${dohUrl})`);
+
+      // 配置页面
+      await this.configurePage(page);
     } catch (error) {
       logger.error('BrowserController', '浏览器启动失败', error);
       throw new RenewalError(
@@ -209,40 +192,21 @@ export class BrowserController {
   }
 
   /**
-   * 创建新页面
+   * 配置页面（仅在 launch() 时调用一次）
    */
-  async newPage(): Promise<Page> {
-    if (!this.browser) {
-      throw new RenewalError(
-        ErrorType.BROWSER_ERROR,
-        '浏览器未启动,请先调用 launch() 方法'
-      );
-    }
-
+  private async configurePage(page: Page): Promise<void> {
     try {
-      const page = await this.browser.newPage();
-
-      // 添加控制台日志监听 - 捕获浏览器控制台的所有输出
-      page.on('console', (msg) => {
+      // 添加控制台日志监听
+      page.on('console', (msg: any) => {
         const type = msg.type();
         const text = msg.text();
 
-        // 只记录错误、警告和重要的日志
         if (type === 'error') {
           logger.error('BrowserConsole', text, new Error(text));
-          // 如果是错误,尝试获取错误堆栈
-          msg.args().forEach(arg => {
-            arg.jsonValue().then((val: any) => {
-              if (val && val.stack) {
-                logger.error('BrowserConsoleStack', val.stack);
-              }
-            }).catch(() => {});
-          });
         } else if (type === 'warn') {
           logger.warn('BrowserConsole', text);
         } else if (type === 'log' || type === 'info' || type === 'debug') {
-          // 记录包含 Turnstile、Cloudflare、WebGPU 等关键字的日志
-          if (text.match(/Turnstile|Cloudflare|WebGPU|challenge|captcha|turnstile/i)) {
+          if (text.match(/Turnstile|Cloudflare|challenge|captcha|turnstile/i)) {
             logger.info('BrowserConsole', text);
           }
         }
@@ -255,7 +219,7 @@ export class BrowserController {
       });
 
       // 监听请求失败
-      page.on('requestfailed', (request) => {
+      page.on('requestfailed', (request: any) => {
         const failure = request.failure();
         const url = request.url();
         if (failure && url.includes('challenges.cloudflare.com')) {
@@ -263,32 +227,47 @@ export class BrowserController {
         }
       });
 
-      // 设置视口大小
-      await page.setViewport({
-        width: this.config.windowWidth ?? 1920,
-        height: this.config.windowHeight ?? 1080,
-      });
-
-      // 设置 User-Agent
-      if (this.config.userAgent) {
-        await page.setUserAgent(this.config.userAgent);
-      }
-
       // 设置超时
       page.setDefaultTimeout(this.config.timeout ?? 30000);
       page.setDefaultNavigationTimeout(this.config.timeout ?? 30000);
 
-      // 应用反检测脚本
-      await this.applyAntiDetectionScripts(page);
-
       // 设置时区和语言
       await this.configureLocale(page);
 
-      this.currentPage = page;
-      logger.info('BrowserController', '新页面创建成功 (已应用反检测脚本)');
+      logger.info('BrowserController', '页面配置完成');
+    } catch (error) {
+      logger.error('BrowserController', '配置页面失败', error);
+      throw error;
+    }
+  }
 
-      // 自动运行环境诊断 (帮助调试)
-      await this.diagnoseEnvironment();
+  /**
+   * 获取或创建页面
+   * 注意: puppeteer-real-browser 在 connect() 时已经创建了第一个页面
+   */
+  async newPage(): Promise<Page> {
+    if (!this.browser) {
+      throw new RenewalError(
+        ErrorType.BROWSER_ERROR,
+        '浏览器未启动,请先调用 launch() 方法'
+      );
+    }
+
+    // 如果已经有页面（在 launch() 时创建的），直接返回
+    if (this.currentPage) {
+      logger.info('BrowserController', '返回已创建的页面');
+      return this.currentPage;
+    }
+
+    // 否则创建新页面
+    try {
+      const page = await this.browser.newPage();
+
+      // 配置页面
+      await this.configurePage(page);
+
+      this.currentPage = page;
+      logger.info('BrowserController', '新页面创建成功');
 
       return page;
     } catch (error) {
@@ -298,246 +277,6 @@ export class BrowserController {
         `创建页面失败: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-  }
-
-  /**
-   * 应用反检测脚本
-   */
-  private async applyAntiDetectionScripts(page: Page): Promise<void> {
-    // 在每个新文档中注入脚本
-    await page.evaluateOnNewDocument(() => {
-      // 1. 覆盖 navigator.webdriver
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-      });
-
-      // 2. 覆盖 chrome 对象
-      (window as any).chrome = {
-        runtime: {},
-      };
-
-      // 3. 覆盖 permissions.query
-      const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters: any) =>
-        parameters.name === 'notifications'
-          ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
-          : originalQuery(parameters);
-
-      // 4. 覆盖 navigator.languages
-      Object.defineProperty(navigator, 'languages', {
-        get: () => ['zh-CN', 'zh', 'en-US', 'en'],
-      });
-
-      // 5. 覆盖 navigator.platform
-      Object.defineProperty(navigator, 'platform', {
-        get: () => 'Win32',
-      });
-
-      // 6. 覆盖 WebGL 指纹
-      const getParameter = WebGLRenderingContext.prototype.getParameter;
-      WebGLRenderingContext.prototype.getParameter = function (parameter) {
-        // UNMASKED_VENDOR_WEBGL
-        if (parameter === 37445) {
-          return 'Intel Inc.';
-        }
-        // UNMASKED_RENDERER_WEBGL
-        if (parameter === 37446) {
-          return 'Intel Iris OpenGL Engine';
-        }
-        return getParameter.call(this, parameter);
-      };
-
-      // 7. 增强 Canvas/WebGL 上下文创建
-      const originalGetContext = HTMLCanvasElement.prototype.getContext;
-      (HTMLCanvasElement.prototype.getContext as any) = function (this: HTMLCanvasElement, contextType: any, attributes?: any) {
-        // 为 2d canvas 自动添加 willReadFrequently: true
-        if (contextType === '2d') {
-          attributes = attributes || {};
-          attributes.willReadFrequently = true;
-        }
-        // 为 WebGL 添加 preserveDrawingBuffer
-        if (contextType === 'webgl' || contextType === 'webgl2') {
-          attributes = attributes || {};
-          attributes.preserveDrawingBuffer = true;
-        }
-
-        try {
-          const ctx = originalGetContext.call(this, contextType, attributes);
-          // ❌ 不添加 webglcontextlost 事件监听器
-          // 原因: 在某些元素上添加监听器可能导致 Turnstile 初始化失败
-          // WebGL context lost 应该由浏览器自己处理
-          return ctx;
-        } catch (e) {
-          return null;
-        }
-      };
-
-      // Canvas 噪声注入已禁用
-      // 原因：Cloudflare Turnstile 可以检测到"一致性不一致"的数学模式
-      // 如果噪声模式看起来过于完美或数学化，会触发反爬虫检测
-      // 保持原始 Canvas 行为更安全
-
-      // 8. 不再伪造 WebGPU 支持
-      // Cloudflare Turnstile 会检测真实的 WebGPU 功能
-      // 如果没有真实的 GPU 支持,保持 undefined 比伪造假对象更好
-
-      // 9. 覆盖 plugins 和 mimeTypes
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => [
-          {
-            0: { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format' },
-            description: 'Portable Document Format',
-            filename: 'internal-pdf-viewer',
-            length: 1,
-            name: 'Chrome PDF Plugin',
-          },
-          {
-            0: { type: 'application/pdf', suffixes: 'pdf', description: '' },
-            description: '',
-            filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai',
-            length: 1,
-            name: 'Chrome PDF Viewer',
-          },
-          {
-            0: { type: 'application/x-nacl', suffixes: '', description: 'Native Client Executable' },
-            1: { type: 'application/x-pnacl', suffixes: '', description: 'Portable Native Client Executable' },
-            description: '',
-            filename: 'internal-nacl-plugin',
-            length: 2,
-            name: 'Native Client',
-          },
-        ],
-      });
-
-      // 10. 覆盖 Connection rtt 和 downlink
-      Object.defineProperty(navigator, 'connection', {
-        get: () => ({
-          effectiveType: '4g',
-          rtt: 100,
-          downlink: 10,
-          saveData: false,
-        }),
-      });
-
-      // 11. 覆盖 deviceMemory
-      Object.defineProperty(navigator, 'deviceMemory', {
-        get: () => 8,
-      });
-
-      // 12. 覆盖 hardwareConcurrency
-      Object.defineProperty(navigator, 'hardwareConcurrency', {
-        get: () => 8,
-      });
-
-      // 13. 移除 automation 相关属性
-      delete (navigator as any).__proto__.webdriver;
-
-      // 14. 覆盖 Permission API
-      const originalPermissionQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters: any) => (
-        parameters.name === 'notifications'
-          ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
-          : originalPermissionQuery(parameters)
-      );
-
-      // 15. 覆盖 Screen API
-      Object.defineProperty(screen, 'availWidth', { get: () => 1920 });
-      Object.defineProperty(screen, 'availHeight', { get: () => 1040 });
-      Object.defineProperty(screen, 'width', { get: () => 1920 });
-      Object.defineProperty(screen, 'height', { get: () => 1080 });
-
-      // 16. 覆盖 Date.getTimezoneOffset
-      Date.prototype.getTimezoneOffset = function () {
-        return -480; // UTC+8 (Asia/Shanghai)
-      };
-
-      // 17. 覆盖 Intl.DateTimeFormat
-      const originalDateTimeFormat = Intl.DateTimeFormat;
-      (Intl as any).DateTimeFormat = function (...args: any[]) {
-        const instance = new (originalDateTimeFormat as any)(...args);
-        const originalResolvedOptions = instance.resolvedOptions;
-        instance.resolvedOptions = function () {
-          const options = originalResolvedOptions.call(this);
-          options.timeZone = 'Asia/Shanghai';
-          return options;
-        };
-        return instance;
-      };
-
-      // 18. ❌ 不覆盖 getBoundingClientRect
-      // 原因: Turnstile 依赖此方法获取元素位置
-      // 覆盖它会导致 Turnstile 报错 "Cannot read properties of null (reading 'getBoundingClientRect')"
-      // 保持原始方法
-
-      // 19. 防止 querySelector 在 shadow-root(closed) 中崩溃
-      const originalQuerySelector = Element.prototype.querySelector;
-      Element.prototype.querySelector = function (selectors: any) {
-        try {
-          return originalQuerySelector.call(this, selectors);
-        } catch (e) {
-          return null;
-        }
-      };
-
-      // 20. 修复 Blob URL 支持 (Turnstile 需要使用 blob URL)
-      const originalCreateObjectURL = URL.createObjectURL;
-      URL.createObjectURL = function(object: any) {
-        try {
-          return originalCreateObjectURL.call(this, object);
-        } catch (e) {
-          // 如果创建失败,返回一个假的 blob URL
-          return 'blob:' + window.location.origin + '/' + Math.random().toString(36).substring(7);
-        }
-      };
-
-      // 21. ❌ 不覆盖 addEventListener
-      // 原因: Turnstile 依赖此方法绑定事件监听器
-      // 覆盖它会导致 Turnstile 报错 "Cannot read properties of null (reading 'addEventListener')"
-      // 保持原始方法
-
-      // 22. 增强 fetch 拦截 - 处理 PAT 挑战
-      const originalFetch = window.fetch;
-      window.fetch = function(input: any, init?: any) {
-        const url = typeof input === 'string' ? input : input.url;
-
-        // 记录 Turnstile 相关的请求
-        if (url.includes('challenges.cloudflare.com')) {
-          console.log('[Fetch] Turnstile request:', url);
-        }
-
-        return originalFetch.call(this, input, init).then(response => {
-          // 如果是 401 错误且与 PAT 相关,记录警告
-          if (response.status === 401 && url.includes('challenges.cloudflare.com')) {
-            console.warn('[Fetch] PAT challenge returned 401 for:', url);
-          }
-          return response;
-        }).catch(error => {
-          // 捕获 fetch 错误但不中断
-          if (url.includes('challenges.cloudflare.com')) {
-            console.error('[Fetch] Turnstile request failed:', url, error);
-          }
-          throw error;
-        });
-      };
-
-      // 23. 防止 console 错误被过度记录
-      const originalError = console.error;
-      console.error = function(...args: any[]) {
-        // 过滤掉 Turnstile 的重复错误
-        const message = args[0];
-        if (typeof message === 'string') {
-          if (message.includes('TurnstileError') && message.includes('106010')) {
-            // 降低日志频率
-            return;
-          }
-          if (message.includes('font-size:0;color:transparent')) {
-            // 忽略这些调试信息
-            return;
-          }
-        }
-        originalError.apply(console, args);
-      };
-    });
   }
 
   /**

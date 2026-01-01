@@ -1,15 +1,10 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BrowserController = void 0;
 exports.smoothMouseMove = smoothMouseMove;
-const puppeteer_extra_1 = __importDefault(require("puppeteer-extra"));
-const puppeteer_extra_plugin_stealth_1 = __importDefault(require("puppeteer-extra-plugin-stealth"));
+const puppeteer_real_browser_1 = require("puppeteer-real-browser");
 const logger_1 = require("../utils/logger");
 const types_1 = require("../types");
-puppeteer_extra_1.default.use((0, puppeteer_extra_plugin_stealth_1.default)());
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const random = (min, max) => Math.random() * (max - min) + min;
 async function smoothMouseMove(page, startX, startY, endX, endY, steps) {
@@ -69,12 +64,9 @@ class BrowserController {
     async launch() {
         try {
             logger_1.logger.info('BrowserController', '正在启动浏览器...');
-            const launchOptions = {
-                defaultViewport: {
-                    width: 1920,
-                    height: 1080,
-                },
-                headless: false,
+            const { browser, page } = await (0, puppeteer_real_browser_1.connect)({
+                headless: this.config.headless ?? false,
+                turnstile: true,
                 args: [
                     '--window-size=1920,1080',
                     '--start-maximized',
@@ -88,68 +80,50 @@ class BrowserController {
                     '--enable-webgl2-compute-context',
                     '--enable-gpu-rasterization',
                     '--enable-zero-copy',
-                    '--enable-vulkan',
-                    '--enable-features=Vulkan,WebGPU',
-                    '--use-gl=desktop',
-                    '--use-angle=gl',
                     '--ignore-gpu-blocklist',
-                    "--enable-webgpu-developer-features",
-                    "--enable-unsafe-webgpu",
-                    "--disable-gpu-vsync",
-                    "--enable-unsafe-swiftshader",
-                    '--disable-dev-shm-usage',
                     '--disable-background-timer-throttling',
                     '--disable-backgrounding-occluded-windows',
                     '--disable-renderer-backgrounding',
-                    '--disable-features=VizDisplayCompositor',
                     '--disable-infobars',
                     '--no-first-run',
                     '--no-default-browser-check',
-                    '--disable-features=Translate',
-                    '--disable-features=media-router',
                     ...this.getDoHArgs(),
                 ],
-            };
-            if (this.config.executablePath) {
-                launchOptions.executablePath = this.config.executablePath;
-            }
-            if (this.config.userDataDir) {
-                launchOptions.userDataDir = this.config.userDataDir;
-                logger_1.logger.info('BrowserController', `使用用户数据目录: ${this.config.userDataDir}`);
-            }
-            this.browser = await puppeteer_extra_1.default.launch(launchOptions);
+                customConfig: {
+                    userDataDir: this.config.userDataDir,
+                    chromePath: this.config.executablePath,
+                },
+                connectOption: {
+                    defaultViewport: {
+                        width: this.config.windowWidth ?? 1920,
+                        height: this.config.windowHeight ?? 1080,
+                    },
+                },
+            });
+            this.browser = browser;
+            this.currentPage = page;
             const dohUrl = this.config.dohUrl || this.DEFAULT_DOH_URL;
             logger_1.logger.info('BrowserController', `浏览器启动成功 (DoH: ${dohUrl})`);
+            await this.configurePage(page);
         }
         catch (error) {
             logger_1.logger.error('BrowserController', '浏览器启动失败', error);
             throw new types_1.RenewalError(types_1.ErrorType.BROWSER_ERROR, `浏览器启动失败: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
-    async newPage() {
-        if (!this.browser) {
-            throw new types_1.RenewalError(types_1.ErrorType.BROWSER_ERROR, '浏览器未启动,请先调用 launch() 方法');
-        }
+    async configurePage(page) {
         try {
-            const page = await this.browser.newPage();
             page.on('console', (msg) => {
                 const type = msg.type();
                 const text = msg.text();
                 if (type === 'error') {
                     logger_1.logger.error('BrowserConsole', text, new Error(text));
-                    msg.args().forEach(arg => {
-                        arg.jsonValue().then((val) => {
-                            if (val && val.stack) {
-                                logger_1.logger.error('BrowserConsoleStack', val.stack);
-                            }
-                        }).catch(() => { });
-                    });
                 }
                 else if (type === 'warn') {
                     logger_1.logger.warn('BrowserConsole', text);
                 }
                 else if (type === 'log' || type === 'info' || type === 'debug') {
-                    if (text.match(/Turnstile|Cloudflare|WebGPU|challenge|captcha|turnstile/i)) {
+                    if (text.match(/Turnstile|Cloudflare|challenge|captcha|turnstile/i)) {
                         logger_1.logger.info('BrowserConsole', text);
                     }
                 }
@@ -165,186 +139,35 @@ class BrowserController {
                     logger_1.logger.error('RequestFailed', `${url} - ${failure.errorText}`);
                 }
             });
-            await page.setViewport({
-                width: this.config.windowWidth ?? 1920,
-                height: this.config.windowHeight ?? 1080,
-            });
-            if (this.config.userAgent) {
-                await page.setUserAgent(this.config.userAgent);
-            }
             page.setDefaultTimeout(this.config.timeout ?? 30000);
             page.setDefaultNavigationTimeout(this.config.timeout ?? 30000);
-            await this.applyAntiDetectionScripts(page);
             await this.configureLocale(page);
+            logger_1.logger.info('BrowserController', '页面配置完成');
+        }
+        catch (error) {
+            logger_1.logger.error('BrowserController', '配置页面失败', error);
+            throw error;
+        }
+    }
+    async newPage() {
+        if (!this.browser) {
+            throw new types_1.RenewalError(types_1.ErrorType.BROWSER_ERROR, '浏览器未启动,请先调用 launch() 方法');
+        }
+        if (this.currentPage) {
+            logger_1.logger.info('BrowserController', '返回已创建的页面');
+            return this.currentPage;
+        }
+        try {
+            const page = await this.browser.newPage();
+            await this.configurePage(page);
             this.currentPage = page;
-            logger_1.logger.info('BrowserController', '新页面创建成功 (已应用反检测脚本)');
-            await this.diagnoseEnvironment();
+            logger_1.logger.info('BrowserController', '新页面创建成功');
             return page;
         }
         catch (error) {
             logger_1.logger.error('BrowserController', '创建页面失败', error);
             throw new types_1.RenewalError(types_1.ErrorType.BROWSER_ERROR, `创建页面失败: ${error instanceof Error ? error.message : String(error)}`);
         }
-    }
-    async applyAntiDetectionScripts(page) {
-        await page.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => false,
-            });
-            window.chrome = {
-                runtime: {},
-            };
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => parameters.name === 'notifications'
-                ? Promise.resolve({ state: Notification.permission })
-                : originalQuery(parameters);
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['zh-CN', 'zh', 'en-US', 'en'],
-            });
-            Object.defineProperty(navigator, 'platform', {
-                get: () => 'Win32',
-            });
-            const getParameter = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function (parameter) {
-                if (parameter === 37445) {
-                    return 'Intel Inc.';
-                }
-                if (parameter === 37446) {
-                    return 'Intel Iris OpenGL Engine';
-                }
-                return getParameter.call(this, parameter);
-            };
-            const originalGetContext = HTMLCanvasElement.prototype.getContext;
-            HTMLCanvasElement.prototype.getContext = function (contextType, attributes) {
-                if (contextType === '2d') {
-                    attributes = attributes || {};
-                    attributes.willReadFrequently = true;
-                }
-                if (contextType === 'webgl' || contextType === 'webgl2') {
-                    attributes = attributes || {};
-                    attributes.preserveDrawingBuffer = true;
-                }
-                try {
-                    const ctx = originalGetContext.call(this, contextType, attributes);
-                    return ctx;
-                }
-                catch (e) {
-                    return null;
-                }
-            };
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [
-                    {
-                        0: { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format' },
-                        description: 'Portable Document Format',
-                        filename: 'internal-pdf-viewer',
-                        length: 1,
-                        name: 'Chrome PDF Plugin',
-                    },
-                    {
-                        0: { type: 'application/pdf', suffixes: 'pdf', description: '' },
-                        description: '',
-                        filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai',
-                        length: 1,
-                        name: 'Chrome PDF Viewer',
-                    },
-                    {
-                        0: { type: 'application/x-nacl', suffixes: '', description: 'Native Client Executable' },
-                        1: { type: 'application/x-pnacl', suffixes: '', description: 'Portable Native Client Executable' },
-                        description: '',
-                        filename: 'internal-nacl-plugin',
-                        length: 2,
-                        name: 'Native Client',
-                    },
-                ],
-            });
-            Object.defineProperty(navigator, 'connection', {
-                get: () => ({
-                    effectiveType: '4g',
-                    rtt: 100,
-                    downlink: 10,
-                    saveData: false,
-                }),
-            });
-            Object.defineProperty(navigator, 'deviceMemory', {
-                get: () => 8,
-            });
-            Object.defineProperty(navigator, 'hardwareConcurrency', {
-                get: () => 8,
-            });
-            delete navigator.__proto__.webdriver;
-            const originalPermissionQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (parameters.name === 'notifications'
-                ? Promise.resolve({ state: Notification.permission })
-                : originalPermissionQuery(parameters));
-            Object.defineProperty(screen, 'availWidth', { get: () => 1920 });
-            Object.defineProperty(screen, 'availHeight', { get: () => 1040 });
-            Object.defineProperty(screen, 'width', { get: () => 1920 });
-            Object.defineProperty(screen, 'height', { get: () => 1080 });
-            Date.prototype.getTimezoneOffset = function () {
-                return -480;
-            };
-            const originalDateTimeFormat = Intl.DateTimeFormat;
-            Intl.DateTimeFormat = function (...args) {
-                const instance = new originalDateTimeFormat(...args);
-                const originalResolvedOptions = instance.resolvedOptions;
-                instance.resolvedOptions = function () {
-                    const options = originalResolvedOptions.call(this);
-                    options.timeZone = 'Asia/Shanghai';
-                    return options;
-                };
-                return instance;
-            };
-            const originalQuerySelector = Element.prototype.querySelector;
-            Element.prototype.querySelector = function (selectors) {
-                try {
-                    return originalQuerySelector.call(this, selectors);
-                }
-                catch (e) {
-                    return null;
-                }
-            };
-            const originalCreateObjectURL = URL.createObjectURL;
-            URL.createObjectURL = function (object) {
-                try {
-                    return originalCreateObjectURL.call(this, object);
-                }
-                catch (e) {
-                    return 'blob:' + window.location.origin + '/' + Math.random().toString(36).substring(7);
-                }
-            };
-            const originalFetch = window.fetch;
-            window.fetch = function (input, init) {
-                const url = typeof input === 'string' ? input : input.url;
-                if (url.includes('challenges.cloudflare.com')) {
-                    console.log('[Fetch] Turnstile request:', url);
-                }
-                return originalFetch.call(this, input, init).then(response => {
-                    if (response.status === 401 && url.includes('challenges.cloudflare.com')) {
-                        console.warn('[Fetch] PAT challenge returned 401 for:', url);
-                    }
-                    return response;
-                }).catch(error => {
-                    if (url.includes('challenges.cloudflare.com')) {
-                        console.error('[Fetch] Turnstile request failed:', url, error);
-                    }
-                    throw error;
-                });
-            };
-            const originalError = console.error;
-            console.error = function (...args) {
-                const message = args[0];
-                if (typeof message === 'string') {
-                    if (message.includes('TurnstileError') && message.includes('106010')) {
-                        return;
-                    }
-                    if (message.includes('font-size:0;color:transparent')) {
-                        return;
-                    }
-                }
-                originalError.apply(console, args);
-            };
-        });
     }
     async configureLocale(page) {
         try {
