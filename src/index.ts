@@ -42,9 +42,9 @@ async function runFullRenewalTest() {
     console.log('\n🚀 开始完整续期测试...\n');
 
     // 导入项目模块
-    const { BrowserController } = await import('../src/browser/controller');
-    const { LoginProcessor } = await import('../src/tasks/login');
-    const { RenewalExecutor } = await import('../src/tasks/renewal');
+    const { BrowserController } = await import('./browser/controller');
+    const { LoginProcessor } = await import('./tasks/login');
+    const { RenewalExecutor } = await import('./tasks/renewal');
 
     // 1. 启动浏览器
     console.log('📦 步骤 1: 启动浏览器');
