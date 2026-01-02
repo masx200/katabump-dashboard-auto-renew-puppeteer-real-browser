@@ -551,6 +551,8 @@ export class RenewalExecutor {
         'renewal successful',
         'renewed successfully',
         '操作成功',
+        'your service has been renewed',
+        'service has been renewed',
         'success',
       ];
 
@@ -559,13 +561,16 @@ export class RenewalExecutor {
         return indicators.some((indicator) => pageText.includes(indicator.toLowerCase()));
       }, successIndicators);
 
-      // 检查是否有错误提示
+      // 检查是否有错误提示 (更具体的错误消息,避免误检测)
       const errorIndicators = [
         '续期失败',
         'renewal failed',
-        'error',
-        '错误',
-        'failed',
+        'renewal error',
+        '操作失败',
+        'operation failed',
+        'invalid request',
+        'unauthorized',
+        'forbidden',
       ];
 
       const hasErrorMessage = await this.page.evaluate((indicators) => {
