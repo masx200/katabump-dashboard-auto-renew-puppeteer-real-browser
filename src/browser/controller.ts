@@ -5,6 +5,8 @@ import { connect } from 'puppeteer-real-browser';
 import { BrowserConfig } from '../types';
 import { logger } from '../utils/logger';
 import { RenewalError, ErrorType } from '../types';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // 使用 any 避免类型冲突（puppeteer-real-browser 的类型与 puppeteer 不兼容）
 type Browser = any;
@@ -100,6 +102,30 @@ export class BrowserController {
   }
 
   /**
+   * 确保 userDataDir 目录存在
+   */
+  private ensureUserDataDir(): void {
+    if (this.config.userDataDir) {
+      const userDataDir = this.config.userDataDir;
+
+      try {
+        // 检查目录是否已存在
+        if (fs.existsSync(userDataDir)) {
+          logger.info('BrowserController', `userDataDir 已存在: ${userDataDir}`);
+          return;
+        }
+
+        // 创建目录（包括所有父目录）
+        fs.mkdirSync(userDataDir, { recursive: true });
+        logger.info('BrowserController', `已创建 userDataDir: ${userDataDir}`);
+      } catch (error) {
+        logger.warn('BrowserController', `创建 userDataDir 失败: ${error}`);
+        // 不抛出异常，让 Chrome 自己处理
+      }
+    }
+  }
+
+  /**
    * 生成 DoH (DNS over HTTPS) 参数
    * 使用 Chrome fieldtrial 方式配置
    */
@@ -120,6 +146,9 @@ export class BrowserController {
   async launch(): Promise<void> {
     try {
       logger.info('BrowserController', '正在启动浏览器...');
+
+      // 确保 userDataDir 目录存在
+      this.ensureUserDataDir();
 
       // 使用 puppeteer-real-browser 的 connect API
       const { browser, page } = await connect({
