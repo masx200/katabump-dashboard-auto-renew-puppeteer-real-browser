@@ -8,7 +8,7 @@ import * as fs from 'fs';
 const CONFIG = {
   targetUrl: 'https://dashboard.katabump.com/dashboard',
   username: 'masx200@qq.com',
-  password: 'K96C15420899b1e2',
+  password: '****************',
   chromePath: 'D:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
 };
 
@@ -32,7 +32,7 @@ async function debugTableStructure() {
     await page.click('button[type="submit"]');
 
     console.log('⏳ 等待登录...');
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => { });
     await new Promise((resolve) => setTimeout(resolve, 3000));
     console.log('✅ 登录完成');
 
@@ -125,7 +125,7 @@ async function debugTableStructure() {
     console.log(JSON.stringify(searchResult, null, 2));
 
     console.log('\n✨ 调试完成，浏览器保持打开');
-    await new Promise(() => {});
+    await new Promise(() => { });
 
   } catch (error) {
     console.error('❌ 错误:', error);

@@ -8,7 +8,7 @@ const CONFIG = {
   targetUrl: 'https://dashboard.katabump.com/dashboard',
   serverDetailUrl: 'https://dashboard.katabump.com/servers/edit?id=189646',
   username: 'masx200@qq.com',
-  password: 'K96C15420899b1e2',
+  password: '****************',
   chromePath: 'D:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   dohUrl: 'https://doh.pub/dns-query',
 };
@@ -95,7 +95,7 @@ async function testRenewalModal() {
       if (!modal) return false;
       const modalElement = modal as HTMLElement;
       return modalElement.classList.contains('show') ||
-             window.getComputedStyle(modalElement).display !== 'none';
+        window.getComputedStyle(modalElement).display !== 'none';
     });
 
     if (modalExists) {

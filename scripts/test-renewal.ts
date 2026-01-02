@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer';
 const CONFIG = {
   targetUrl: 'https://dashboard.katabump.com/dashboard',
   username: 'masx200@qq.com',
-  password: 'K96C15420899b1e2',
+  password: '****************',
   chromePath: 'D:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   serverId: '189646',
   serverName: 'ubuntu-3x-ui-warp',
@@ -261,7 +261,7 @@ async function testRenewalFlow() {
     console.log('浏览器将保持打开，您可以手动进行续期操作');
     console.log('按 Ctrl+C 退出...');
 
-    await new Promise(() => {});
+    await new Promise(() => { });
 
   } catch (error) {
     console.error('❌ 发生错误:', error);

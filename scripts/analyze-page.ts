@@ -9,7 +9,7 @@ import * as fs from 'fs';
 const CONFIG = {
   targetUrl: 'https://dashboard.katabump.com/dashboard',
   username: 'masx200@qq.com',
-  password: 'K96C15420899b1e2',
+  password: '****************',
   chromePath: 'D:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
 };
 
@@ -321,7 +321,7 @@ async function analyzePage() {
     console.log('按 Ctrl+C 退出...');
 
     // 保持浏览器打开
-    await new Promise(() => {});
+    await new Promise(() => { });
   } catch (error) {
     console.error('发生错误:', error);
   } finally {

@@ -9,7 +9,7 @@ const CONFIG = {
   targetUrl: 'https://dashboard.katabump.com/dashboard',
   serverDetailUrl: 'https://dashboard.katabump.com/servers/edit?id=189646',
   username: 'masx200@qq.com',
-  password: 'K96C15420899b1e2',
+  password: '****************',
   chromePath: 'D:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   serverId: '189646',
   dohUrl: 'https://doh.pub/dns-query',
@@ -59,7 +59,7 @@ async function testRenewal() {
     console.log('✅ 已点击登录按钮');
 
     // 等待登录完成
-    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
     await new Promise((resolve) => setTimeout(resolve, 3000));
     console.log('✅ 登录完成');
 
@@ -261,7 +261,7 @@ async function testRenewal() {
     console.log('按 Ctrl+C 退出...');
 
     // 保持浏览器打开
-    await new Promise(() => {});
+    await new Promise(() => { });
 
   } catch (error) {
     console.error('\n❌ 发生错误:', error);
